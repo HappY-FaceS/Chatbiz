@@ -1,26 +1,52 @@
 const express = require('express');
-const app = express();
-const PORT= 3000;
-
 const http = require('http');
 const socketio = require('socket.io');
+
+const connect = require('./config/database-config');
+const Chat = require('./models/chat');
+
+const app = express();
+const PORT =3000;
 const server = http.createServer(app);
 const io = socketio(server);
 
 io.on('connection', (socket) => {
-    console.log('a user connected', socket.id);
+    socket.on('join_room', (data) => {
+        console.log("joining a room", data.roomid)
+        socket.join(data.roomid);
+    });
 
-    socket.on('msg_send', (data) => {
+    socket.on('msg_send', async (data) => {
         console.log(data);
-        // io.emit('msg_rcvd', data);
-        // socket.emit('msg_rcvd', data)
-        socket.broadcast.emit('msg_rcvd', data)
+        const chat = await Chat.create({
+            roomId: data.roomid,
+            user: data.username,
+            content: data.msg
+        });
+        io.to(data.roomid).emit('msg_rcvd', data);
+    });
+
+    socket.on('typing', (data) => {
+        socket.broadcast.to(data.roomid).emit('someone_typing');
     })
-
 });
-
+app.set('view engine', 'ejs');
 app.use('/', express.static(__dirname + '/public'));
 
-server.listen(PORT, () => {
+app.get('/chat/:roomid', async (req, res) => {
+    const chats = await Chat.find({
+        roomId: req.params.roomid
+    }).select('content user');
+    console.log(chats);
+    res.render('index', {
+        name: 'Rishav',
+        id: req.params.roomid,
+        chats: chats
+    });
+});
+
+server.listen(PORT, async () => {
     console.log('Server started at', PORT);
+    await connect();
+    console.log("mongo db connected")
 });
